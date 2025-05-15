@@ -90,13 +90,14 @@ class Hand:
                     dist = np.linalg.norm(p5 - p9)
                     if abs(dist - self.landmark_len["5-9"]) <= min_dist:
                         min_dist = abs(dist - self.landmark_len["5-9"])
-                        self.landmarks_world[0] = p0
-                        self.landmarks_world[5] = p5
-                        self.landmarks_world[9] = p9
+                        best_points[0] = p0
+                        best_points[5] = p5
+                        best_points[9] = p9
         if min_dist < epsilon:
-            for key, value in best_points.items():
-                self.landmarks_world[key] = value
-                return True
+            self.landmarks_world[0] = best_points[0]
+            self.landmarks_world[5] = best_points[5]
+            self.landmarks_world[9] = best_points[9]
+            return True
                     
         return False
                     
@@ -115,7 +116,7 @@ class Hand:
             self.estimate_landmark_world_from_base(5, 6, cam)
             self.estimate_landmark_world_from_base(6, 7, cam)
             self.estimate_landmark_world_from_base(7, 8, cam)
-            self.visualize_landmark(frame,8,threshold=0.005)
+            #self.visualize_landmark(frame,8,threshold=0.005)
         except Exception as e:
             print(e)
 

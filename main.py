@@ -17,8 +17,13 @@ while True:
     cm.update(frame,visualize=True)
     hd.detect(frame,visualize=False)
     if hd.estimate_depth(cm):
-        #hd.visualize_primary_landmark(frame)
         hd.estimate_index_tip(frame,cm)
+    try:
+        pass
+        #hd.visualize_primary_landmark(frame)
+        hd.visualize_landmark(frame, 8, threshold=0.02)
+    except Exception as e:
+        print(e)
 
     a = hd.landmarks[0]
     #marker.draw_world_line_on_image(frame,a,cm.uv_to_world(a[0],a[1]),cm,-1)
