@@ -6,7 +6,7 @@ import marker
 cap = cv2.VideoCapture(0)
 window_name = 'Camera Pose & ArUco Markers'
 
-mk = marker.Marker()
+cm = marker.Camera()
 hd = hand.Hand()
 
 while True:
@@ -14,8 +14,14 @@ while True:
     if not ret:
         break
 
-    mk.detect(frame,visualize=True)
-    hd.detect(frame,visualize=True)
+    cm.update(frame,visualize=True)
+    hd.detect(frame,visualize=False)
+    if hd.estimate_depth(cm):
+        #hd.visualize_primary_landmark(frame)
+        hd.estimate_index_tip(frame,cm)
+
+    a = hd.landmarks[0]
+    #marker.draw_world_line_on_image(frame,a,cm.uv_to_world(a[0],a[1]),cm,-1)
 
     cv2.imshow(window_name, frame)
     
