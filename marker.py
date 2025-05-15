@@ -26,6 +26,7 @@ class Marker:
         self.R_wc = np.eye(3)
         self.t_wc = np.zeros((3,1))
         self.cam_pos = np.array([0.0, 0.0, 0.0])
+        self.cam_view = np.array([0, 0, 1])
 
     def detect(self,frame,visualize=False):
         corners, ids, _ = detector.detectMarkers(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
@@ -46,6 +47,9 @@ class Marker:
                         self.t_wc = -R.T @ t
 
                         self.cam_pos = self.t_wc.flatten()
+                        self.cam_view = self.R_wc.T @ self.cam_pos
+                        self.cam_view = self.cam_view / np.linalg.norm(self.cam_view)
+
                         if visualize:
                             text = f"Camera Pos (m): x={self.cam_pos[0]:.2f}, y={self.cam_pos[1]:.2f}, z={self.cam_pos[2]:.2f}"
                             cv2.putText(frame, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)

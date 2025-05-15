@@ -8,7 +8,7 @@ mp_drawing = mp.solutions.drawing_utils
 class Hand:
     def __init__(self):
         self.landmarks = [(0.0, 0.0, 0.0)] * 21
-        #self.primary
+        self.landmark_len = []
     
     def detect(self, frame, visualize=False):
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -28,3 +28,6 @@ class Hand:
                     if visualize:
                         cv2.circle(frame, (cx, cy), 4, (0, 255, 0), -1)
                         cv2.putText(frame, f"{idx}", (cx+5, cy-5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+
+    def calib_hand(self,cam_pos,cam_vec):
+        pass
