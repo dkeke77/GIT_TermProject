@@ -45,48 +45,61 @@ class Hand:
         else:
             return False
 
-    def estimate_depth(self, cam, z_range=(0.03, 1), num_samples=500):
-        """
-        cam_origin: 카메라의 월드 위치 (np.array shape (3,))
-        uv_vectors: dict, {id: ray_vector (np.array shape (3,))}
-        cm: Camera 객체
-        z_range: tuple, z 탐색 범위 (최솟값, 최댓값)
-        num_samples: int, 브루트포스 샘플 수
-        """
-        z_candidates = np.linspace(z_range[0], z_range[1], num_samples)
-        min_error = float('inf')
-        best_z = None
-        best_positions = {}
+    def estimate_depth(self, cam, z_range=(0.1, 0.8), num_samples=500, epsilon=0.001):
+        def find_points_on_ray(p0, ray_origin, ray_dir, distance):
+            p0 = np.array(p0)
+            b = -2 * np.dot(ray_dir, p0 - ray_origin)
+            c = np.linalg.norm(p0 - ray_origin) ** 2 - distance ** 2
 
-        # 기준: point0
+            discriminant = b**2 - 4*c
+            if discriminant < 0:
+                return []
+
+            sqrt_disc = np.sqrt(discriminant)
+            t1 = (-b + sqrt_disc) / 2
+            t2 = (-b - sqrt_disc) / 2
+
+            p1 = ray_origin + ray_dir * t1
+            p2 = ray_origin + ray_dir * t2
+
+            return [p1, p2] if discriminant > 0 else [p1]  # 중복 제거
+        
+        z_candidates = np.linspace(z_range[0], z_range[1], num_samples)
+
         ray0 = cam.uv_to_world_dir(self.landmarks[0][0],self.landmarks[0][1])
         ray5 = cam.uv_to_world_dir(self.landmarks[5][0],self.landmarks[5][1])
         ray9 = cam.uv_to_world_dir(self.landmarks[9][0],self.landmarks[9][1])
 
-        len_05 = self.landmark_len["0-5"]
-        len_09 = self.landmark_len["0-9"]
-        len_59 = self.landmark_len["5-9"]
+        min_dist = float('inf')
+        best_points = {0:None,5:None,9:None}
 
         for z in z_candidates:
             p0 = cam.cam_pos + ray0 * z
-            p5 = cam.cam_pos + ray5 * z
-            p9 = cam.cam_pos + ray9 * z
 
-            d_05 = np.linalg.norm(p0 - p5)
-            d_09 = np.linalg.norm(p0 - p9)
-            d_59 = np.linalg.norm(p5 - p9)
+            p5_candidates = find_points_on_ray(p0, cam.cam_pos, ray5, self.landmark_len["0-5"])
+            if len(p5_candidates) == 0:
+                continue
 
-            error = (d_05 - len_05)**2 + (d_09 - len_09)**2 + (d_59 - len_59)**2
+            p9_candidates = find_points_on_ray(p0, cam.cam_pos, ray9, self.landmark_len["0-9"])
+            if len(p9_candidates) == 0 :
+                continue
 
-            if error < min_error:
-                min_error = error
-                best_z = z
-                best_positions = {0: p0, 5: p5, 9: p9}
-
-        for key, value in best_positions.items():
-            self.landmarks_world[key] = value
-        return best_z
-                
+            # 후보들을 조합하여 조건 검사
+            for p5 in p5_candidates:
+                for p9 in p9_candidates:
+                    dist = np.linalg.norm(p5 - p9)
+                    if abs(dist - self.landmark_len["5-9"]) <= min_dist:
+                        min_dist = abs(dist - self.landmark_len["5-9"])
+                        self.landmarks_world[0] = p0
+                        self.landmarks_world[5] = p5
+                        self.landmarks_world[9] = p9
+        if min_dist < epsilon:
+            for key, value in best_points.items():
+                self.landmarks_world[key] = value
+                return True
+                    
+        return False
+                    
     def visualize_primary_landmark(self,frame):
         for i in [0,5,9]:
             lm = self.landmarks[i]
@@ -102,10 +115,9 @@ class Hand:
             self.estimate_landmark_world_from_base(5, 6, cam)
             self.estimate_landmark_world_from_base(6, 7, cam)
             self.estimate_landmark_world_from_base(7, 8, cam)
+            self.visualize_landmark(frame,8,threshold=0.005)
         except Exception as e:
             print(e)
-
-        self.visualize_landmark(frame,8,threshold=0.005)
 
     def visualize_landmark(self,frame,idx,threshold=0.02):
         coord = self.landmarks_world[idx]
