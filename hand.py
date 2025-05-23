@@ -2,6 +2,14 @@ import mediapipe as mp
 from scipy.optimize import minimize
 import numpy as np
 import cv2
+import filter as f
+
+filter_manager = f.LandmarkFilterManager(
+    freq=30,         # 카메라 프레임레이트
+    min_cutoff=1.0,  # smoothing 정도
+    beta=5.0,        # 반응성
+    d_cutoff=1.0     # 속도 필터링 cutoff
+)
 
 mp_hands = mp.solutions.hands
 hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_confidence=0.5)
@@ -32,73 +40,97 @@ class Hand:
             self.landmarks[i] = (0.0, 0.0, 0.0)
         
         if result.multi_hand_landmarks:
+            raw_landmarks = [(0.0, 0.0, 0.0)] * 21
             for hand_landmarks in result.multi_hand_landmarks:
-                mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)                
+                mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
                 for idx, lm in enumerate(hand_landmarks.landmark):
                     h, w = frame.shape[:2]
                     cx, cy = int(lm.x * w), int(lm.y * h)
-                    self.landmarks[idx] = (lm.x, lm.y, lm.z)
+                    raw_landmarks[idx] = (lm.x, lm.y, lm.z)
                     if visualize:
                         cv2.circle(frame, (cx, cy), 4, (0, 255, 0), -1)
                         cv2.putText(frame, f"{idx}", (cx+5, cy-5), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+            self.landmarks = filter_manager.filter(raw_landmarks)
             return True
         else:
             return False
 
-    def estimate_depth(self, cam, z_range=(0.1, 0.8), num_samples=500, epsilon=0.001):
+    def estimate_depth(self, cam, z_range=(0.01, 0.8), num_samples=50, iterations=3, epsilon=0.001):
         def find_points_on_ray(p0, ray_origin, ray_dir, distance):
-            p0 = np.array(p0)
-            b = -2 * np.dot(ray_dir, p0 - ray_origin)
-            c = np.linalg.norm(p0 - ray_origin) ** 2 - distance ** 2
-
-            discriminant = b**2 - 4*c
-            if discriminant < 0:
+            v = p0 - ray_origin
+            b = -2 * np.dot(ray_dir, v)
+            c = np.dot(v, v) - distance ** 2
+            disc = b**2 - 4 * c
+            if disc < 0:
                 return []
-
-            sqrt_disc = np.sqrt(discriminant)
+            sqrt_disc = np.sqrt(disc)
             t1 = (-b + sqrt_disc) / 2
             t2 = (-b - sqrt_disc) / 2
-
             p1 = ray_origin + ray_dir * t1
             p2 = ray_origin + ray_dir * t2
+            return [p1, p2] if disc > 0 else [p1]
 
-            return [p1, p2] if discriminant > 0 else [p1]  # 중복 제거
-        
-        z_candidates = np.linspace(z_range[0], z_range[1], num_samples)
+        ray0 = cam.uv_to_world_dir(*self.landmarks[0])
+        ray5 = cam.uv_to_world_dir(*self.landmarks[5])
+        ray9 = cam.uv_to_world_dir(*self.landmarks[9])
 
-        ray0 = cam.uv_to_world_dir(self.landmarks[0][0],self.landmarks[0][1])
-        ray5 = cam.uv_to_world_dir(self.landmarks[5][0],self.landmarks[5][1])
-        ray9 = cam.uv_to_world_dir(self.landmarks[9][0],self.landmarks[9][1])
+        best_error = float('inf')
+        best_points = {0: None, 5: None, 9: None}
+        best_z_idx = -1
 
-        min_dist = float('inf')
-        best_points = {0:None,5:None,9:None}
+        z_min, z_max = z_range
 
-        for z in z_candidates:
-            p0 = cam.cam_pos + ray0 * z
+        for step in range(iterations):
+            z_candidates = np.linspace(z_min, z_max, num_samples)
+            errors = []
 
-            p5_candidates = find_points_on_ray(p0, cam.cam_pos, ray5, self.landmark_len["0-5"])
-            if len(p5_candidates) == 0:
-                continue
+            for idx, z in enumerate(z_candidates):
+                p0 = cam.cam_pos + ray0 * z
+                p5s = find_points_on_ray(p0, cam.cam_pos, ray5, self.landmark_len["0-5"])
+                if not p5s:
+                    errors.append(float('inf'))
+                    continue
+                p9s = find_points_on_ray(p0, cam.cam_pos, ray9, self.landmark_len["0-9"])
+                if not p9s:
+                    errors.append(float('inf'))
+                    continue
 
-            p9_candidates = find_points_on_ray(p0, cam.cam_pos, ray9, self.landmark_len["0-9"])
-            if len(p9_candidates) == 0 :
-                continue
+                min_local_error = float('inf')
+                local_best = None
+                for p5 in p5s:
+                    for p9 in p9s:
+                        dist = np.linalg.norm(p5 - p9)
+                        err = abs(dist - self.landmark_len["5-9"])
+                        if err < min_local_error:
+                            min_local_error = err
+                            local_best = (p0, p5, p9)
 
-            # 후보들을 조합하여 조건 검사
-            for p5 in p5_candidates:
-                for p9 in p9_candidates:
-                    dist = np.linalg.norm(p5 - p9)
-                    if abs(dist - self.landmark_len["5-9"]) <= min_dist:
-                        min_dist = abs(dist - self.landmark_len["5-9"])
-                        best_points[0] = p0
-                        best_points[5] = p5
-                        best_points[9] = p9
-        if min_dist < epsilon:
+                errors.append(min_local_error)
+
+                if min_local_error < best_error:
+                    best_error = min_local_error
+                    best_points[0], best_points[5], best_points[9] = local_best
+                    best_z_idx = idx
+
+                    if best_error < epsilon:
+                        print(best_error)
+                        self.landmarks_world[0] = best_points[0]
+                        self.landmarks_world[5] = best_points[5]
+                        self.landmarks_world[9] = best_points[9]
+                        return True
+
+            # coarse to fine: update z_range
+            if 0 <= best_z_idx < num_samples:
+                lower_idx = max(0, best_z_idx - 2)
+                upper_idx = min(num_samples - 1, best_z_idx + 2)
+                z_min = z_candidates[lower_idx]
+                z_max = z_candidates[upper_idx]
+
+        if best_error < epsilon:
             self.landmarks_world[0] = best_points[0]
             self.landmarks_world[5] = best_points[5]
             self.landmarks_world[9] = best_points[9]
             return True
-                    
         return False
                     
     def visualize_primary_landmark(self,frame):
@@ -150,7 +182,6 @@ class Hand:
             raise ValueError(f"Distance info for landmarks {min_idx}-{max_idx} not found in landmark_len.")
         r = self.landmark_len[key]
         
-        # (o + t*d - c)^2 = r^2 → 이차방정식으로 푼다
         oc = o - c
         b = 2 * np.dot(d, oc)
         c_ = np.dot(oc, oc) - r**2

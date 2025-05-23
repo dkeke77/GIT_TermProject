@@ -9,6 +9,9 @@ window_name = 'Camera Pose & ArUco Markers'
 cm = marker.Camera()
 hd = hand.Hand()
 
+fps = cap.get(cv2.CAP_PROP_FPS)
+print(f"Camera FPS: {fps}")
+
 while True:
     ret, frame = cap.read()
     if not ret:
@@ -21,9 +24,10 @@ while True:
     try:
         pass
         #hd.visualize_primary_landmark(frame)
-        hd.visualize_landmark(frame, 8, threshold=0.02)
+        hd.visualize_landmark(frame, 8, threshold=0.005)
     except Exception as e:
-        print(e)
+        pass
+        #print(e)
 
     a = hd.landmarks[0]
     #marker.draw_world_line_on_image(frame,a,cm.uv_to_world(a[0],a[1]),cm,-1)
