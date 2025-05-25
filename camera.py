@@ -61,6 +61,10 @@ class Camera:
                             cv2.putText(frame, text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                             cv2.drawFrameAxes(frame, K, dist, rvec, tvec, 0.03)
 
+                        return True
+                    
+        return False
+
     def uv_to_world_dir(self, u, v, isNormalized=True):
         if isNormalized:
             u *= self.img_w
