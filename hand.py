@@ -152,12 +152,6 @@ class Hand:
                     best_points[0], best_points[5], best_points[9] = local_best
                     best_z_idx = idx
 
-                    if best_error < epsilon:
-                        self.landmarks_world[0] = best_points[0]
-                        self.landmarks_world[5] = best_points[5]
-                        self.landmarks_world[9] = best_points[9]
-                        return True
-
             # coarse to fine: update z_range
             if 0 <= best_z_idx < num_samples:
                 lower_idx = max(0, best_z_idx - 2)
@@ -219,7 +213,7 @@ class Hand:
         elif len(points) == 1:
             self.landmarks_world[target_idx] = points[0]
         else:
-            raise ValueError("No intersection to sphere")
+            raise ValueError(f"{min_idx}-{max_idx} : No intersection to sphere")
 
         return self.landmarks_world[target_idx]
     
